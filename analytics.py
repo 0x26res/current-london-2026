@@ -66,6 +66,21 @@ def batch_to_tables(batch: pa.Table, **schemas: pa.Schema) -> tuple[pa.Table, ..
     )
 
 
+def get_gbp_updates(status_df: pl.DataFrame, ticker_df: pl.DataFrame) -> pl.DataFrame:
+    return (
+        ticker_df.join(
+            status_df.select("id", "quote_currency"),
+            left_on="product_id",
+            right_on="id",
+            how="left",
+        )
+        .filter(pl.col("quote_currency") == "GBP")
+        .select(["product_id", "time", "best_bid", "best_ask"])
+        .group_by(["product_id"])
+        .last()
+    )
+
+
 @dataclasses.dataclass()
 class BatchProcessor:
     status_df: pl.DataFrame = dataclasses.field(
@@ -74,16 +89,17 @@ class BatchProcessor:
 
     def __call__(self, status_df: pl.DataFrame, ticker_df: pl.DataFrame):
         if not status_df.is_empty():
-            self.status_df = pl.concat([self.status_df, status_df]).group_by("id").last()
-        gbp_updates = ticker_df.join(self.status_df.select('id', 'quote_currency'), left_on="product_id", right_on="id",
-                                     how="left").filter(
-            pl.col('quote_currency') == 'GBP'
-        ).select(
-            ['product_id', 'time', 'best_bid', 'best_ask']
-        ).group_by(['product_id']).last()
+            self.status_df = (
+                pl.concat([self.status_df, status_df]).group_by("id").last()
+            )
+        gbp_updates = get_gbp_updates(self.status_df, ticker_df)
         if not gbp_updates.is_empty():
-            print('')
-            print(tabulate.tabulate(gbp_updates.rows(), headers=gbp_updates.columns, tablefmt="pipe"))
+            print("")
+            print(
+                tabulate.tabulate(
+                    gbp_updates.rows(), headers=gbp_updates.columns, tablefmt="pipe"
+                )
+            )
 
 
 def process_batch(batch: pa.Table, processor: BatchProcessor) -> None:
