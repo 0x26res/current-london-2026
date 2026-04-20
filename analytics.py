@@ -1,9 +1,12 @@
 import dataclasses
+import sys
 
+import pandas as pd
 import polars as pl
 import pyarrow as pa
 import tabulate
 import pyarrow.compute as pc
+from beavers import Dag
 from kafkars import ConsumerManager, SourceTopic
 
 from util.json_util import json_to_table
@@ -54,6 +57,18 @@ STATUS_SCHEMA = pa.schema(
     ]
 )
 
+GBP_UPDATE_SCHEMA = pa.schema(
+    [
+        pa.field("product_id", pa.string()),
+        pa.field("time", pa.timestamp("ns", "UTC")),
+        pa.field("price", pa.float64()),
+    ]
+)
+
+TICKER_PL_SCHEMA = pl.from_arrow(TICKER_SCHEMA.empty_table()).schema
+STATUS_PL_SCHEMA = pl.from_arrow(STATUS_SCHEMA.empty_table()).schema
+GBP_UPDATE_PL_SCHEMA = pl.from_arrow(GBP_UPDATE_SCHEMA.empty_table()).schema
+
 
 def batch_to_table(batch: pa.Table, topic: str, schema: pa.Schema) -> pa.Table:
     topic_batch = batch.filter(pc.field("topic") == topic)
@@ -66,7 +81,7 @@ def batch_to_tables(batch: pa.Table, **schemas: pa.Schema) -> tuple[pa.Table, ..
     )
 
 
-def get_gbp_updates(status_df: pl.DataFrame, ticker_df: pl.DataFrame) -> pl.DataFrame:
+def get_gbp_updates(ticker_df: pl.DataFrame, status_df: pl.DataFrame) -> pl.DataFrame:
     return (
         ticker_df.join(
             status_df.select("id", "quote_currency"),
@@ -75,7 +90,7 @@ def get_gbp_updates(status_df: pl.DataFrame, ticker_df: pl.DataFrame) -> pl.Data
             how="left",
         )
         .filter(pl.col("quote_currency") == "GBP")
-        .select(["product_id", "time", "best_bid", "best_ask"])
+        .select(["product_id", "time", "price"])
         .group_by(["product_id"])
         .last()
     )
@@ -92,7 +107,8 @@ class BatchProcessor:
             self.status_df = (
                 pl.concat([self.status_df, status_df]).group_by("id").last()
             )
-        gbp_updates = get_gbp_updates(self.status_df, ticker_df)
+
+        gbp_updates = get_gbp_updates(ticker_df=ticker_df, status_df=self.status_df)
         if not gbp_updates.is_empty():
             print("")
             print(
@@ -110,6 +126,29 @@ def process_batch(batch: pa.Table, processor: BatchProcessor) -> None:
     )
 
 
+class DagProcessor:
+    def __init__(self) -> None:
+        self.dag = Dag()
+        ticker_stream = self.dag.source_stream(
+            pl.from_arrow(STATUS_SCHEMA.empty_table()), name="ticker_df"
+        )
+        status_stream = self.dag.source_stream(
+            pl.from_arrow(STATUS_SCHEMA.empty_table()), name="status_df"
+        )
+        latest_status = self.dag.pl.last_by_keys(status_stream, ["id"])
+        gbp_stream = self.dag.pl.table_stream(
+            get_gbp_updates, GBP_UPDATE_PL_SCHEMA
+        ).map(ticker_stream, latest_status)
+        self.dag.state(
+            lambda df: print(df.to_pandas().to_markdown(index=False))
+        ).map(gbp_stream)
+
+    def __call__(self, **kwargs: pl.DataFrame):
+        for name, df in kwargs.items():
+            self.dag.get_sources()[name].set_stream(df)
+        self.dag.execute(pd.Timestamp.now("UTC"))
+
+
 def main():
     consumer_manager = ConsumerManager(
         config={
@@ -120,13 +159,12 @@ def main():
             SourceTopic.from_earliest("status"),
             SourceTopic.from_relative_time("ticker", 3600_000),  # 1 hour ago
         ],
+        batch_size=100_000,
     )
-    processor = BatchProcessor()
+    processor = DagProcessor()
 
     while True:
-        batch = consumer_manager.poll(
-            timeout_ms=1_000,
-        )
+        batch = consumer_manager.poll(timeout_ms=1_000)
         if batch.num_rows > 0:
             process_batch(batch, processor)
 
