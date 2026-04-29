@@ -49,7 +49,7 @@ docker run --name=simple_kafka -p 9092:9092 -d bashj79/kafka-kraft
 And the second time:
 
 ```shell
-docker run simple_kafka
+docker start simple_kafka
 ```
 
 Once started you can create a Kafka topics called `ticker` and `status`.
@@ -72,6 +72,20 @@ You should now be able to see the Coinbase data streaming on Kafka.
 ```shell
 docker exec simple_kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server=localhost:9092 --topic=ticker 
 docker exec simple_kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server=localhost:9092 --topic=status 
+```
+
+Tickers look like this:
+
+```json lines
+{"sequence": 126772717215, "product_id": "BTC-USD", "price": "75205.32", "open_24h": "76064.94", "volume_24h": "6971.01295932", "low_24h": "73741.53", "high_24h": "76193.12", "volume_30d": "257056.93796654", "best_bid": "75203.18", "best_bid_size": "0.21317581", "best_ask": "75205.32", "best_ask_size": "0.24736366", "side": "buy", "time": "2026-04-20T14:04:11.141674Z", "trade_id": 1005003868, "last_size": "0.01857498"}
+{"sequence": 96776691025, "product_id": "ETH-USD", "price": "2306.4", "open_24h": "2339.29", "volume_24h": "113767.11338547", "low_24h": "2252.06", "high_24h": "2342.69", "volume_30d": "4253609.46477611", "best_bid": "2306.39", "best_bid_size": "1.09341702", "best_ask": "2306.60", "best_ask_size": "0.00100000", "side": "buy", "time": "2026-04-20T14:04:11.309896Z", "trade_id": 800001428, "last_size": "0.81750835"}
+```
+
+And status:
+
+```json lines
+{"id": "BTC-USD", "base_currency": "BTC", "quote_currency": "USD", "base_increment": "0.00000001", "quote_increment": "0.01", "display_name": "BTC-USD", "status": "online", "margin_enabled": false, "status_message": "", "min_market_funds": "1", "post_only": false, "limit_only": false, "cancel_only": false, "auction_mode": false, "type": "spot", "fx_stablecoin": false, "max_slippage_percentage": "0.02000000"}
+{"id": "CBETH-USD", "base_currency": "CBETH", "quote_currency": "USD", "base_increment": "0.00001", "quote_increment": "0.01", "display_name": "cbETH-USD", "status": "online", "margin_enabled": false, "status_message": "", "min_market_funds": "1", "post_only": false, "limit_only": false, "cancel_only": false, "auction_mode": false, "type": "spot", "fx_stablecoin": false, "max_slippage_percentage": "0.03000000"}
 ```
 
 ### Run the dashboard
