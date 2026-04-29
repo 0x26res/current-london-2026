@@ -1,5 +1,7 @@
 [dependency-groups]
-dev = []
+dev = [
+    "pytest>=9.0.3",
+]
 
 [project]
 classifiers = [

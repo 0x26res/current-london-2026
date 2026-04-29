@@ -37,7 +37,7 @@ async def run_web_socket(producer: confluent_kafka.Producer):
 
             if data_type == "ticker":
                 producer.produce(
-                    topic="ticker", value=json.dumps(data), key=data["product_id"]
+                    topic="price", value=json.dumps(data), key=data["product_id"]
                 )
             elif data_type == "status":
                 product_ids = sorted([p["id"] for p in data["products"] if p["id"]])

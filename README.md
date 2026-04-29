@@ -52,16 +52,16 @@ And the second time:
 docker start simple_kafka
 ```
 
-Once started you can create a Kafka topics called `ticker` and `status`.
+Once started you can create a Kafka topics called `price` and `status`.
 
 ```shell
-docker exec simple_kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server=localhost:9092 --create --topic=ticker --partitions=1 --replication-factor=1
+docker exec simple_kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server=localhost:9092 --create --topic=price --partitions=1 --replication-factor=1
 docker exec simple_kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server=localhost:9092 --create --topic=status --partitions=1 --replication-factor=1
 ```
 
 ### Publish Coinbase's Market Data on Kafka
 
-In this step, we'll run a simple python job that listen to Coinbase's Websocket market data API, and publish the data on the `ticker` Kafka topic.
+In this step, we'll run a simple python job that listen to Coinbase's Websocket market data API, and publish the data on the `price` Kafka topic.
 
 ```shell
 uv run python ./websocket_feed.py
@@ -70,7 +70,7 @@ uv run python ./websocket_feed.py
 You should now be able to see the Coinbase data streaming on Kafka.
 
 ```shell
-docker exec simple_kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server=localhost:9092 --topic=ticker 
+docker exec simple_kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server=localhost:9092 --topic=price 
 docker exec simple_kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server=localhost:9092 --topic=status 
 ```
 
