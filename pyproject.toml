@@ -19,6 +19,7 @@ dependencies = [
     "websockets",
     "polars>=1.39.3",
     "tabulate>=0.10.0",
+    "typer>=0.25.1",
 ]
 description = "Kafka example for London Current 2026"
 name = "beavers-aiven-example"

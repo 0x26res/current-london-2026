@@ -5,6 +5,7 @@ import pandas as pd
 import polars as pl
 import pyarrow as pa
 import pyarrow.compute as pc
+import typer
 from beavers import Dag, TimerManager, Node
 from beavers.polars_wrapper import PolarsDagWrapper
 from beavers.polars_wrapper import _get_stream_schema
@@ -67,7 +68,7 @@ GBP_UPDATE_SCHEMA_PA = pa.schema(
 
 PRICE_SCHEMA = pl.from_arrow(PRICE_SCHEMA_PA.empty_table()).schema
 STATUS_SCHEMA = pl.from_arrow(STATUS_SCHEMA_PA.empty_table()).schema
-GBP_UPDATE_SCHEMA = pl.from_arrow(GBP_UPDATE_SCHEMA_PA.empty_table()).schema
+GBP_PRICE_SCHEMA = pl.from_arrow(GBP_UPDATE_SCHEMA_PA.empty_table()).schema
 SUMMARY_SCHEMA = pl.Schema(
     {
         "volume": pl.Float64,
@@ -88,18 +89,17 @@ def batch_to_df(batch: pa.Table, topic: str, schema: pl.Schema) -> pl.DataFrame:
         }
     )
     casts = [
-        pl.when(pl.col(name) == '').then(pl.lit(None, pl.String())).otherwise(pl.col(name)).alias(name)
+        pl.when(pl.col(name) == "")
+        .then(pl.lit(None, pl.String()))
+        .otherwise(pl.col(name))
+        .alias(name)
         for name, dtype in schema.items()
         if dtype == pl.Float64
     ]
 
     return (
         pl.from_arrow(topic_batch.select(["value"]))
-        .with_columns(
-            pl.col("value")
-            .cast(pl.String)
-            .str.json_decode(dtype=raw_struct)
-        )
+        .with_columns(pl.col("value").cast(pl.String).str.json_decode(dtype=raw_struct))
         .unnest("value")
         .with_columns(casts)
         .cast(schema)
@@ -110,7 +110,7 @@ def batch_to_dfs(batch: pa.Table, **schemas: pa.Schema) -> tuple[pa.Table, ...]:
     return tuple(batch_to_df(batch, topic, schema) for topic, schema in schemas.items())
 
 
-def get_gbp_updates(price_df: pl.DataFrame, status_df: pl.DataFrame) -> pl.DataFrame:
+def get_gbp_price(price_df: pl.DataFrame, status_df: pl.DataFrame) -> pl.DataFrame:
     return (
         price_df.join(
             status_df.select("id", "quote_currency"),
@@ -153,10 +153,10 @@ class History:
     timestamp_column: str
 
     def __call__(
-            self,
-            now,
-            timer_manager: TimerManager,
-            new_data: pl.DataFrame,
+        self,
+        now,
+        timer_manager: TimerManager,
+        new_data: pl.DataFrame,
     ) -> pl.DataFrame:
         self.state = pl.concat([self.state, new_data]).filter(
             pl.col(self.timestamp_column) > (now - self.time_window)
@@ -171,10 +171,10 @@ class History:
 
 
 def history(
-        self: PolarsDagWrapper,
-        stream: Node,
-        time_window: datetime.timedelta,
-        timestamp_column: str,
+    self: PolarsDagWrapper,
+    stream: Node,
+    time_window: datetime.timedelta,
+    timestamp_column: str,
 ):
     dag = self._dag
     schema = _get_stream_schema(stream)
@@ -214,7 +214,7 @@ def simple_dag() -> Dag:
     status_stream = dag.pl.source_table(STATUS_SCHEMA, name="status")
 
     latest_status = dag.pl.last_by_keys(status_stream, ["id"])
-    gbp_stream = dag.pl.table_stream(get_gbp_updates, GBP_UPDATE_SCHEMA).map(
+    gbp_stream = dag.pl.table_stream(get_gbp_price, GBP_PRICE_SCHEMA).map(
         price_stream, latest_status
     )
     dag.sink("gbp", gbp_stream)
@@ -227,7 +227,7 @@ def complex_dag() -> Dag:
     status_stream = dag.pl.source_table(STATUS_SCHEMA, name="status")
 
     latest_status = dag.pl.last_by_keys(status_stream, ["id"])
-    gbp_stream = dag.pl.table_stream(get_gbp_updates, GBP_UPDATE_SCHEMA).map(
+    gbp_stream = dag.pl.table_stream(get_gbp_price, GBP_PRICE_SCHEMA).map(
         price_stream, latest_status
     )
     gbp_history = dag.pl.history(
@@ -269,7 +269,13 @@ def process_batch(batch: pa.Table, processor: DagProcessor) -> None:
     )
 
 
-def main():
+DAGS = {
+    "simple": simple_dag,
+    "complex": complex_dag,
+}
+
+
+def main(name: str = "simple"):
     consumer_manager = ConsumerManager(
         config={
             "bootstrap.servers": "localhost:9092",
@@ -282,7 +288,7 @@ def main():
         ],
         batch_size=100_000,
     )
-    processor = DagProcessor(complex_dag())
+    processor = DagProcessor(DAGS[name]())
 
     while True:
         batch = consumer_manager.poll(timeout_ms=1_000)
@@ -293,4 +299,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    typer.run(main)
