@@ -1,6 +1,7 @@
 [dependency-groups]
 dev = [
     "pytest>=9.0.3",
+    "pytest-benchmark>=5.2.3",
 ]
 
 [project]

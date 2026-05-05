@@ -127,7 +127,7 @@ def get_summary(df: pl.DataFrame) -> pl.DataFrame:
     return df.select(
         pl.col("last_size").sum().alias("volume"),
         pl.col("product_id").count().alias("trades"),
-        pl.col("product_id").n_unique().alias("uniqute_product_id"),
+        pl.col("product_id").n_unique().alias("unique_product_id"),
         pl.col("time").min().alias("first_trade_at"),
         pl.col("time").max().alias("last_trade_at"),
     )
@@ -275,7 +275,7 @@ DAGS = {
 }
 
 
-def main(name: str = "simple"):
+def main(dag: str = "simple"):
     consumer_manager = ConsumerManager(
         config={
             "bootstrap.servers": "localhost:9092",
@@ -288,7 +288,7 @@ def main(name: str = "simple"):
         ],
         batch_size=100_000,
     )
-    processor = DagProcessor(DAGS[name]())
+    processor = DagProcessor(DAGS[dag]())
 
     while True:
         batch = consumer_manager.poll(timeout_ms=1_000)

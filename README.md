@@ -70,11 +70,11 @@ uv run python ./websocket_feed.py
 You should now be able to see the Coinbase data streaming on Kafka.
 
 ```shell
-docker exec simple_kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server=localhost:9092 --topic=price 
-docker exec simple_kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server=localhost:9092 --topic=status 
+docker exec simple_kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server=localhost:9092 --topic=price
+docker exec simple_kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server=localhost:9092 --topic=status
 ```
 
-Tickers look like this:
+Prices look like this:
 
 ```json lines
 {"sequence": 126772717215, "product_id": "BTC-USD", "price": "75205.32", "open_24h": "76064.94", "volume_24h": "6971.01295932", "low_24h": "73741.53", "high_24h": "76193.12", "volume_30d": "257056.93796654", "best_bid": "75203.18", "best_bid_size": "0.21317581", "best_ask": "75205.32", "best_ask_size": "0.24736366", "side": "buy", "time": "2026-04-20T14:04:11.141674Z", "trade_id": 1005003868, "last_size": "0.01857498"}
