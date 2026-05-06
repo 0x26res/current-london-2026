@@ -11,6 +11,8 @@ from beavers.polars_wrapper import PolarsDagWrapper
 from beavers.polars_wrapper import _get_stream_schema
 from kafkars import ConsumerManager, SourceTopic
 
+GBP_TIME_WINDOW = datetime.timedelta(minutes=60)
+
 PRICE_SCHEMA_PA = pa.schema(
     [
         pa.field("sequence", pa.int64()),
@@ -232,7 +234,7 @@ def complex_dag() -> Dag:
     )
     gbp_history = dag.pl.history(
         gbp_stream,
-        time_window=datetime.timedelta(minutes=60),
+        time_window=GBP_TIME_WINDOW,
         timestamp_column="time",
     )
 
