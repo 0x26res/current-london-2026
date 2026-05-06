@@ -27,3 +27,6 @@ run-analytics dag:
 
 test-benchmark:
     uv run pytest tests/test_benchmark.py
+
+test-unit:
+    PYTHONPATH=. uv run pytest tests --ignore-glob="*test_benchmark*"
