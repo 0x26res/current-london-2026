@@ -283,10 +283,9 @@ def main(dag: str = "simple"):
         },
         topics=[
             SourceTopic.from_earliest("status"),
-            SourceTopic.from_earliest("price"),
-            # SourceTopic.from_relative_time("price", 3_600_000),  # 1 hour ago
+            SourceTopic.from_relative_time("price", 3_600_000),  # 1 hour ago
         ],
-        batch_size=100_000,
+        batch_size=1_000_000,
     )
     processor = DagProcessor(DAGS[dag]())
 
