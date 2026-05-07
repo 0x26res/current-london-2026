@@ -12,6 +12,8 @@ import websockets
 
 logger = logging.getLogger(__name__)
 
+RECV_TIMEOUT_SECONDS = 30
+
 
 def set_logger():
     logging.basicConfig(
@@ -31,7 +33,7 @@ async def run_web_socket(producer: confluent_kafka.Producer):
         subscribed = []
 
         while True:
-            payload = await ws.recv()
+            payload = await asyncio.wait_for(ws.recv(), timeout=RECV_TIMEOUT_SECONDS)
             data = json.loads(payload)
             data_type = data.pop("type")
 
@@ -77,11 +79,13 @@ def main():
     while True:
         try:
             asyncio.run(run_web_socket(producer))
-        except KeyError:
-            logger.exception("Stopped by user")
+        except KeyboardInterrupt:
+            logger.info("Stopped by user")
             break
-        except websockets.WebSocketException:
+        except (websockets.WebSocketException, asyncio.TimeoutError):
             logger.exception("Websocket error, restarting")
+        finally:
+            producer.flush(timeout=2.0)
 
 
 if __name__ == "__main__":
