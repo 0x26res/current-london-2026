@@ -14,7 +14,7 @@ kafka-create-topic topic:
 kafka-stream-price: (kafka-stream "price")
 kafka-stream-status: (kafka-stream "status")
 kafka-stream topic:
-    docker exec simple_kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server=localhost:9092 --topic={{topic}}
+    docker exec simple_kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server=localhost:9092 --topic={{topic}} | jq
 
 run-websocket-feed:
     uv run python ./websocket_feed.py

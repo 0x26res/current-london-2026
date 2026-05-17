@@ -11,7 +11,7 @@ from beavers.polars_wrapper import PolarsDagWrapper
 from beavers.polars_wrapper import _get_stream_schema
 from kafkars import ConsumerManager, SourceTopic
 
-GBP_TIME_WINDOW = datetime.timedelta(minutes=60)
+GBP_TIME_WINDOW = datetime.timedelta(minutes=10)
 
 PRICE_SCHEMA_PA = pa.schema(
     [
@@ -285,7 +285,9 @@ def main(dag: str = "simple"):
         },
         topics=[
             SourceTopic.from_earliest("status"),
-            SourceTopic.from_relative_time("price", 3_600_000),  # 1 hour ago
+            SourceTopic.from_latest("price")
+            if dag == "simple"
+            else SourceTopic.from_relative_time("price", int(GBP_TIME_WINDOW.total_seconds() * 1000)),
         ],
         batch_size=1_000_000,
     )
