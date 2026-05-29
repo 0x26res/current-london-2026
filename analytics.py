@@ -59,20 +59,22 @@ STATUS_SCHEMA_PA = pa.schema(
     ]
 )
 
-GBP_UPDATE_SCHEMA_PA = pa.schema(
+ENHANCED_PRICE_SCHEMA_PA = pa.schema(
     [
         pa.field("product_id", pa.string()),
         pa.field("time", pa.timestamp("ns", "UTC")),
         pa.field("price", pa.float64()),
         pa.field("last_size", pa.float64()),
+        pa.field("quote_currency", pa.string()),
     ]
 )
 
 PRICE_SCHEMA = pl.from_arrow(PRICE_SCHEMA_PA.empty_table()).schema
 STATUS_SCHEMA = pl.from_arrow(STATUS_SCHEMA_PA.empty_table()).schema
-GBP_PRICE_SCHEMA = pl.from_arrow(GBP_UPDATE_SCHEMA_PA.empty_table()).schema
+ENHANCED_PRICE_SCHEMA = pl.from_arrow(ENHANCED_PRICE_SCHEMA_PA.empty_table()).schema
 SUMMARY_SCHEMA = pl.Schema(
     {
+        "quote_currency": pl.String,
         "volume": pl.Float64,
         "trades": pl.Int64,
         "unique_product_id": pl.Int64,
@@ -112,21 +114,21 @@ def batch_to_dfs(batch: pa.Table, **schemas: pa.Schema) -> tuple[pa.Table, ...]:
     return tuple(batch_to_df(batch, topic, schema) for topic, schema in schemas.items())
 
 
-def get_gbp_price(price_df: pl.DataFrame, status_df: pl.DataFrame) -> pl.DataFrame:
+def get_enhanced_price(price_df: pl.DataFrame, status_df: pl.DataFrame) -> pl.DataFrame:
     return (
         price_df.join(
-            status_df.select("id", "quote_currency"),
+            status_df.select("id", "quote_currency", "max_slippage_percentage"),
             left_on="product_id",
             right_on="id",
             how="left",
         )
-        .filter(pl.col("quote_currency") == "GBP")
-        .select(["product_id", "time", "price", "last_size"])
+        .filter(pl.col("max_slippage_percentage") >= 0.02)
+        .select(["product_id", "time", "price", "last_size", "quote_currency"])
     )
 
 
 def get_summary(df: pl.DataFrame) -> pl.DataFrame:
-    return df.select(
+    return df.group_by("quote_currency").agg(
         pl.col("last_size").sum().alias("volume"),
         pl.col("product_id").count().alias("trades"),
         pl.col("product_id").n_unique().alias("unique_product_id"),
@@ -134,19 +136,10 @@ def get_summary(df: pl.DataFrame) -> pl.DataFrame:
         pl.col("time").max().alias("last_trade_at"),
     )
 
-
-def get_percentage_change(price_df: pl.DataFrame, status_df: pl.DataFrame):
-    return (
-        price_df.join(status_df, left_on="product_id", right_on="id")
-        .filter(pl.col("quote_currency") == "GBP")
-        .group_by("product_id")
-        .agg(
-            first=pl.col("price").first(),
-            last=pl.col("price").last(),
-        )
-        .select("id", percentage_change=(pl.col("last") / pl.col("first") - 1) * 100)
-    )
-
+def get_filtered_summary(df: pl.DataFrame, stream: pl.DataFrame) -> pl.DataFrame:
+    return df.filter(
+        pl.col("quote_currency").is_in(stream["quote_currency"].unique())
+    ).pipe(get_summary)
 
 @dataclasses.dataclass
 class History:
@@ -193,21 +186,21 @@ def history(
     )
 
 
-PolarsDagWrapper.history = history
 
-
-def get_stale_currency(price_df: pl.DataFrame, status_df: pl.DataFrame) -> pl.DataFrame:
-    return (
-        price_df["product_id"]
-        .unique()
-        .to_frame()
-        .join(status_df, left_on="product_id", right_on="id", how="left")[
-            "quote_currency"
-        ]
-        .unique()
-        .sort()
-        .to_frame()
+def stream_series(
+    self: PolarsDagWrapper,
+    transformation,
+    dtype,
+):
+    return self._dag.stream(
+        transformation,
+        empty=pl.Series(dtype=dtype)
     )
+
+
+PolarsDagWrapper.history = history
+PolarsDagWrapper.stream_series = stream_series
+
 
 
 def simple_dag() -> Dag:
@@ -216,10 +209,10 @@ def simple_dag() -> Dag:
     status_stream = dag.pl.source_table(STATUS_SCHEMA, name="status")
 
     latest_status = dag.pl.last_by_keys(status_stream, ["id"])
-    gbp_stream = dag.pl.table_stream(get_gbp_price, GBP_PRICE_SCHEMA).map(
+    enhanced_stream = dag.pl.table_stream(get_enhanced_price, ENHANCED_PRICE_SCHEMA).map(
         price_stream, latest_status
     )
-    dag.sink("gbp", gbp_stream)
+    dag.sink("enhanced", gbp_stream)
     return dag
 
 
@@ -229,20 +222,28 @@ def complex_dag() -> Dag:
     status_stream = dag.pl.source_table(STATUS_SCHEMA, name="status")
 
     latest_status = dag.pl.last_by_keys(status_stream, ["id"])
-    gbp_stream = dag.pl.table_stream(get_gbp_price, GBP_PRICE_SCHEMA).map(
-        price_stream, latest_status
+    enhanced_stream = dag.pl.table_stream(
+        get_enhanced_price, ENHANCED_PRICE_SCHEMA
+    ).map(price_stream, latest_status)
+
+    currencies = dag.pl.stream_series(
+        lambda x: x['quote_currency'].unique(),
+        dtype=pl.String()
     )
-    gbp_history = dag.pl.history(
-        gbp_stream,
+
+
+    enhanced_history = dag.pl.history(
+        enhanced_stream,
         time_window=GBP_TIME_WINDOW,
         timestamp_column="time",
     )
 
-    gbp_latest = dag.pl.table_stream(get_summary, schema=SUMMARY_SCHEMA).map(
-        gbp_history
-    )
+    summary = dag.pl.table_stream(
+        get_filtered_summary,
+        schema=SUMMARY_SCHEMA
+    ).map(enhanced_history, enhanced_stream)
 
-    dag.sink("gbp_latest", gbp_latest)
+    dag.sink("summary", summary)
     return dag
 
 
