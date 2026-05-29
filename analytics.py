@@ -12,6 +12,7 @@ from beavers.polars_wrapper import _get_stream_schema
 from kafkars import ConsumerManager, SourceTopic
 
 GBP_TIME_WINDOW = datetime.timedelta(minutes=60)
+MAX_SLIPPAGE = 0.02
 
 PRICE_SCHEMA_PA = pa.schema(
     [
@@ -122,7 +123,7 @@ def get_enhanced_price(price_df: pl.DataFrame, status_df: pl.DataFrame) -> pl.Da
             right_on="id",
             how="left",
         )
-        .filter(pl.col("max_slippage_percentage") >= 0.02)
+        .filter(pl.col("max_slippage_percentage") >= MAX_SLIPPAGE)
         .select(["product_id", "time", "price", "last_size", "quote_currency"])
     )
 
@@ -225,12 +226,6 @@ def complex_dag() -> Dag:
     enhanced_stream = dag.pl.table_stream(
         get_enhanced_price, ENHANCED_PRICE_SCHEMA
     ).map(price_stream, latest_status)
-
-    currencies = dag.pl.stream_series(
-        lambda x: x['quote_currency'].unique(),
-        dtype=pl.String()
-    )
-
 
     enhanced_history = dag.pl.history(
         enhanced_stream,
