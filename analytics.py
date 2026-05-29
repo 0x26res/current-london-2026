@@ -11,7 +11,7 @@ from beavers.polars_wrapper import PolarsDagWrapper
 from beavers.polars_wrapper import _get_stream_schema
 from kafkars import ConsumerManager, SourceTopic
 
-GBP_TIME_WINDOW = datetime.timedelta(minutes=10)
+GBP_TIME_WINDOW = datetime.timedelta(minutes=60)
 
 PRICE_SCHEMA_PA = pa.schema(
     [
@@ -260,7 +260,7 @@ class DagProcessor:
         for sink in self.dag.get_sinks().values():
             if sink[0].get_cycle_id() == self.dag.get_cycle_id():
                 value = sink[0].get_sink_value()
-                print(value.to_pandas().to_markdown(index=False))
+                print(value.write_ndjson(), end="", flush=True)
 
 
 def process_batch(batch: pa.Table, processor: DagProcessor) -> None:
